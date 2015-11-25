@@ -30,7 +30,7 @@ link_directories(${Boost_LIBRARY_DIR})
 
 include_directories(".")
 
-add_executable(how_to_variant optional.hpp optional.cpp)
+add_executable(how_to_variant optional.hpp optional.cpp variant.hpp variant.cpp)
 target_link_libraries(how_to_variant ${Boost_LIBRARIES})
 
 if(WIN32)
