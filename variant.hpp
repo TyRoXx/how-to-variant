@@ -8,23 +8,6 @@
 
 namespace how
 {
-	template <class T>
-	struct variant_element
-	{
-		union
-		{
-			T value;
-		};
-
-		variant_element()
-		{
-		}
-
-		~variant_element()
-		{
-		}
-	};
-
 	template <bool ...V>
 	struct any;
 
@@ -57,7 +40,33 @@ namespace how
 	};
 
 	template <class ...T>
-	struct variant : private variant_element<T>...
+	struct union_of;
+
+	template <>
+	struct union_of<>
+	{
+	};
+
+	template <class Head, class ...Tail>
+	struct union_of<Head, Tail...>
+	{
+		union
+		{
+			Head head;
+			union_of<Tail...> tail;
+		};
+
+		union_of()
+		{
+		}
+
+		~union_of()
+		{
+		}
+	};
+
+	template <class ...T>
+	struct variant
 	{
 		~variant() noexcept
 		{
@@ -78,10 +87,9 @@ namespace how
 			move_constructors[which()](*this, std::move(other));
 		}
 
-		variant &operator = (variant &&other)
-		{
-			return *this;
-		}
+		//TODO
+		variant &operator = (variant &&other) = delete;
+		variant &operator = (variant const &other) = delete;
 
 		variant(variant const &other)
 			: m_which(other.m_which)
@@ -93,16 +101,11 @@ namespace how
 			copy_constructors[which()](*this, other);
 		}
 
-		variant &operator = (variant const &other)
-		{
-			return *this;
-		}
-
 		template <class U, class = typename std::enable_if<any<std::is_same<typename std::decay<U>::type, T>::value...>::value, void>::type>
 		variant(U &&value)
 		{
 			typedef typename std::decay<U>::type clean_element_type;
-			clean_element_type &element = static_cast<variant_element<clean_element_type> &>(*this).value;
+			clean_element_type &element = get<clean_element_type>();
 			new (static_cast<void *>(&element)) clean_element_type(std::forward<U>(value));
 			m_which = find<clean_element_type, T...>::value;
 		}
@@ -112,26 +115,75 @@ namespace how
 			return m_which;
 		}
 
+		template <class Visitor>
+		auto apply_visitor(Visitor &&visitor)
+		{
+			typedef typename std::decay<Visitor>::type clean_visitor;
+			typedef typename clean_visitor::result_type result_type;
+			static std::array<result_type(*)(variant &, Visitor &), sizeof...(T)> const methods =
+			{{
+				&apply_visitor_method<result_type, T, Visitor>...
+			}};
+			return methods[which()](*this, visitor);
+		}
+
+		template <class Visitor>
+		auto apply_visitor(Visitor &&visitor) const
+		{
+			typedef typename std::decay<Visitor>::type clean_visitor;
+			typedef typename clean_visitor::result_type result_type;
+			static std::array<result_type(*)(variant const &, Visitor &), sizeof...(T)> const methods =
+			{{
+				&apply_visitor_method_const<result_type, T, Visitor>...
+			}};
+			return methods[which()](*this, visitor);
+		}
+
 	private:
 
+		union_of<T...> m_value_storage;
 		std::uint8_t m_which;
+
+		template <class U>
+		U &get()
+		{
+			return reinterpret_cast<U &>(m_value_storage);
+		}
+
+		template <class U>
+		U const &get() const
+		{
+			return reinterpret_cast<U const &>(m_value_storage);
+		}
 
 		template <class U>
 		static void destroy(variant &this_) noexcept
 		{
-			static_cast<variant_element<U> &>(this_).value.~U();
+			this_.get<U>().~U();
 		}
 
 		template <class U>
 		static void copy_construct(variant &to, variant const &from)
 		{
-			new (static_cast<void *>(&static_cast<variant_element<U> &>(to).value)) U(static_cast<variant_element<U> const &>(from).value);
+			new (static_cast<void *>(&to.get<U>())) U(from.get<U>());
 		}
 
 		template <class U>
 		static void move_construct(variant &to, variant &&from)
 		{
-			new (static_cast<void *>(&static_cast<variant_element<U> &>(to).value)) U(std::move(static_cast<variant_element<U> const &>(from).value));
+			new (static_cast<void *>(&to.get<U>())) U(std::move(from.get<U>()));
+		}
+
+		template <class Result, class U, class Visitor>
+		static Result apply_visitor_method(variant &this_, Visitor &visitor)
+		{
+			return std::forward<Visitor>(visitor)(this_.get<U>());
+		}
+
+		template <class Result, class U, class Visitor>
+		static Result apply_visitor_method_const(variant const &this_, Visitor &visitor)
+		{
+			return std::forward<Visitor>(visitor)(this_.get<U>());
 		}
 	};
 }
