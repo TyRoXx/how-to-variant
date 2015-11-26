@@ -65,16 +65,16 @@ namespace how
 		}
 	};
 
+	struct invalid_variant_exception : std::logic_error
+	{
+	};
+
 	template <class ...T>
 	struct variant
 	{
 		~variant() noexcept
 		{
-			static std::array<void(*)(variant &), sizeof...(T)> const destructors =
-			{{
-				&destroy<T>...
-			}};
-			destructors[which()](*this);
+			destroy_value();
 		}
 
 		variant(variant &&other)
@@ -89,16 +89,38 @@ namespace how
 
 		//TODO
 		variant &operator = (variant &&other) = delete;
-		variant &operator = (variant const &other) = delete;
+
+		variant &operator = (variant const &other)
+		{
+			if (which() == other.which())
+			{
+				static std::array<void(*)(variant &, variant const &), sizeof...(T)> const assign =
+				{{
+					&copy_assign<T>...
+				}};
+				assign[which()](*this, other);
+			}
+			else
+			{
+				destroy_value();
+				try
+				{
+					m_which = other.m_which;
+					copy_construct_value(other);
+				}
+				catch (...)
+				{
+					m_which = invalid_which;
+					throw;
+				}
+			}
+			return *this;
+		}
 
 		variant(variant const &other)
 			: m_which(other.m_which)
 		{
-			static std::array<void(*)(variant &, variant const &), sizeof...(T)> const copy_constructors =
-			{{
-				&copy_construct<T>...
-			}};
-			copy_constructors[which()](*this, other);
+			copy_construct_value(other);
 		}
 
 		template <class U, class = typename std::enable_if<any<std::is_same<typename std::decay<U>::type, T>::value...>::value, void>::type>
@@ -141,8 +163,19 @@ namespace how
 
 	private:
 
+		static constexpr std::uint8_t invalid_which = 255;
+
 		union_of<T...> m_value_storage;
 		std::uint8_t m_which;
+
+		void require_valid()
+		{
+			if (m_which != invalid_which)
+			{
+				return;
+			}
+			throw invalid_variant_exception();
+		}
 
 		template <class U>
 		U &get()
@@ -154,6 +187,24 @@ namespace how
 		U const &get() const
 		{
 			return reinterpret_cast<U const &>(m_value_storage);
+		}
+
+		void destroy_value()
+		{
+			static std::array<void(*)(variant &), sizeof...(T)> const destructors =
+			{{
+				&destroy<T>...
+			}};
+			destructors[which()](*this);
+		}
+
+		void copy_construct_value(variant const &from)
+		{
+			static std::array<void(*)(variant &, variant const &), sizeof...(T)> const copy_constructors =
+			{{
+				&copy_construct<T>...
+			}};
+			copy_constructors[which()](*this, from);
 		}
 
 		template <class U>
@@ -172,6 +223,12 @@ namespace how
 		static void move_construct(variant &to, variant &&from)
 		{
 			new (static_cast<void *>(&to.get<U>())) U(std::move(from.get<U>()));
+		}
+
+		template <class U>
+		static void copy_assign(variant &to, variant const &from)
+		{
+			to.get<U>() = from.get<U>();
 		}
 
 		template <class Result, class U, class Visitor>
