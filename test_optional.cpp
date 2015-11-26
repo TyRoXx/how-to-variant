@@ -5,25 +5,28 @@
 #include <array>
 using namespace how;
 
-struct immovable
+namespace
 {
-	immovable()
+	struct immovable
 	{
-	}
+		immovable()
+		{
+		}
 
-	immovable(immovable const &) = delete;
-	immovable &operator = (immovable const &) = delete;
-};
+		immovable(immovable const &) = delete;
+		immovable &operator = (immovable const &) = delete;
+	};
+
+	struct empty
+	{
+	};
+}
 
 BOOST_AUTO_TEST_CASE(optional_emplace)
 {
 	optional<immovable> o;
 	o.emplace();
 }
-
-struct empty
-{
-};
 
 BOOST_AUTO_TEST_CASE(optional_sizeof)
 {
@@ -69,4 +72,21 @@ BOOST_AUTO_TEST_CASE(optional_dereference)
 	optional<std::vector<int>> o(in_place, 1, 2, 3, 4);
 	std::vector<int> &ref = *o;
 	BOOST_CHECK_EQUAL_COLLECTIONS(o->begin(), o->end(), ref.begin(), ref.end());
+}
+
+BOOST_AUTO_TEST_CASE(optional_various_tests)
+{
+	std::vector<int> const o{1, 2, 3, 4};
+	optional<std::vector<int>> copied(o);
+	BOOST_CHECK(copied);
+	BOOST_CHECK(o == *copied);
+	optional<std::vector<int>> moved(std::move(*copied));
+	BOOST_CHECK(moved);
+	BOOST_CHECK(o == *moved);
+	copied = o;
+	BOOST_CHECK(copied);
+	BOOST_CHECK(o == *copied);
+	moved = std::move(*copied);
+	BOOST_CHECK(moved);
+	BOOST_CHECK(o == *moved);
 }

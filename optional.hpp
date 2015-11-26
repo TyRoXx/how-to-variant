@@ -126,11 +126,51 @@ namespace how
 			return *this;
 		}
 
+		optional(T &&value) noexcept(noexcept(T(std::declval<T &&>())))
+			: m_is_set(true)
+		{
+			new (static_cast<void *>(&m_value)) T(std::move(value));
+		}
+
+		optional(T const &value) noexcept(noexcept(T(std::declval<T const &>())))
+			: m_is_set(true)
+		{
+			new (static_cast<void *>(&m_value)) T(value);
+		}
+
 		template <class ...Args>
 		optional(in_place_t, Args &&...args) noexcept(noexcept(T{std::forward<Args>(args)...}))
 			: m_is_set(true)
 		{
 			new (static_cast<void *>(&m_value)) T{std::forward<Args>(args)...};
+		}
+
+		optional &operator = (T &&value) noexcept(noexcept(std::declval<T &>() = std::declval<T &&>()))
+		{
+			if (m_is_set)
+			{
+				m_value = std::move(value);
+			}
+			else
+			{
+				new (static_cast<void *>(&m_value)) T(std::move(value));
+				m_is_set = true;
+			}
+			return *this;
+		}
+
+		optional &operator = (T const &value) noexcept(noexcept(std::declval<T &>() = std::declval<T const &>()))
+		{
+			if (m_is_set)
+			{
+				m_value = value;
+			}
+			else
+			{
+				new (static_cast<void *>(&m_value)) T(value);
+				m_is_set = true;
+			}
+			return *this;
 		}
 
 		template <class ...Args>
